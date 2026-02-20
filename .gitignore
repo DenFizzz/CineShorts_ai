@@ -20,3 +20,8 @@ backend/uploads/
 # macOS + прочий мусор
 .DS_Store
 *.log
+
+# уже должно быть, но на всякий
+venv/
+__pycache__/
+backend/uploads/
