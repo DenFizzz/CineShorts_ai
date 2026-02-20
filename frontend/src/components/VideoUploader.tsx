@@ -8,6 +8,8 @@ export default function VideoUploader() {
   const [progress, setProgress] = useState<number>(0)
   const [uploading, setUploading] = useState<boolean>(false)
   const [uploadedFileName, setUploadedFileName] = useState<string | null>(null)
+  const [scenes, setScenes] = useState<any[]>([])           // массив сцен после обработки
+  const [processing, setProcessing] = useState<boolean>(false)
 
   const abortController = useRef<AbortController | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -25,6 +27,7 @@ export default function VideoUploader() {
     setStatus("")
     setProgress(0)
     setUploadedFileName(null)
+    setScenes([])           // сбрасываем сцены при новом файле
   }
 
   const formatFileSize = (bytes: number) => {
@@ -42,6 +45,7 @@ export default function VideoUploader() {
     setUploading(true)
     setStatus("Загрузка...")
     setProgress(0)
+    setScenes([])
 
     const formData = new FormData()
     formData.append("file", file)
@@ -100,7 +104,7 @@ export default function VideoUploader() {
     if (!uploadedFileName) return
 
     try {
-      const res = await fetch(`/api/proxy/delete/${encodeURIComponent(uploadedFileName)}`, {
+      const res = await fetch(`/api/proxy/delete?filename=${encodeURIComponent(uploadedFileName)}`, {
         method: "DELETE",
       })
 
@@ -108,6 +112,7 @@ export default function VideoUploader() {
         setStatus("Файл удалён с сервера")
         setUploadedFileName(null)
         setFile(null)
+        setScenes([])
         if (fileInputRef.current) fileInputRef.current.value = ""
       } else {
         setStatus("Не удалось удалить файл")
@@ -122,7 +127,34 @@ export default function VideoUploader() {
     setStatus("")
     setProgress(0)
     setUploadedFileName(null)
+    setScenes([])
     if (fileInputRef.current) fileInputRef.current.value = ""
+  }
+
+  const handleProcess = async () => {
+    if (!uploadedFileName) return
+
+    setProcessing(true)
+    setStatus("Обнаружение сцен...")
+    setScenes([])
+
+    try {
+      const res = await fetch(`/api/proxy/process?filename=${encodeURIComponent(uploadedFileName)}`, {
+        method: "POST",
+      })
+
+      if (res.ok) {
+        const data = await res.json()
+        setScenes(data.scenes || [])
+        setStatus(`Готово! Найдено ${data.scene_count} сцен за ${data.processing_time_sec} сек`)
+      } else {
+        setStatus("Ошибка обработки сцен")
+      }
+    } catch (err: any) {
+      setStatus("Не удалось запустить обработку: " + err.message)
+    } finally {
+      setProcessing(false)
+    }
   }
 
   return (
@@ -179,7 +211,7 @@ export default function VideoUploader() {
               "disabled:opacity-50 disabled:cursor-not-allowed",
             ].join(" ")}
           >
-            {uploading ? `Загружается... ${progress}%` : "Отправить на обработку"}
+            {uploading ? `Загружается... ${progress}%` : "Отправить на сервер"}
           </button>
 
           {uploading && (
@@ -221,18 +253,49 @@ export default function VideoUploader() {
         </p>
       )}
 
-      {/* Кнопка удаления после загрузки */}
+      {/* Блок действий после загрузки */}
       {uploadedFileName && (
-        <div className="mt-6 flex justify-center">
-          <button
-            onClick={handleDelete}
-            className={[
-              "py-2 px-6 bg-red-600/70 rounded-lg",
-              "hover:bg-red-700 transition",
-            ].join(" ")}
-          >
-            Удалить загруженный файл
-          </button>
+        <div className="mt-8 space-y-4">
+          <div className="flex gap-4 justify-center">
+            <button
+              onClick={handleProcess}
+              disabled={processing}
+              className={[
+                "py-3 px-8 bg-green-600 rounded-lg font-medium text-white",
+                "hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed",
+              ].join(" ")}
+            >
+              {processing ? "Обработка..." : "Начать работу"}
+            </button>
+
+            <button
+              onClick={handleDelete}
+              className={[
+                "py-3 px-8 bg-red-600/80 rounded-lg font-medium text-white",
+                "hover:bg-red-700",
+              ].join(" ")}
+            >
+              Удалить файл
+            </button>
+          </div>
+
+          {/* Список найденных сцен */}
+          {scenes.length > 0 && (
+            <div className="mt-6 bg-gray-900 p-6 rounded-xl border border-gray-700">
+              <h3 className="text-lg font-medium mb-4 text-white">Найденные сцены</h3>
+              <ul className="space-y-3 text-gray-300">
+                {scenes.map((scene) => (
+                  <li key={scene.scene_id} className="flex justify-between">
+                    <span>Сцена {scene.scene_id}</span>
+                    <span>
+                      {scene.start_time} → {scene.end_time} сек
+                      <span className="ml-3 text-gray-500">({scene.duration} сек)</span>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
         </div>
       )}
     </div>
