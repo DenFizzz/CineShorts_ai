@@ -16,7 +16,6 @@ export default function VideoUploader() {
     const selected = e.target.files?.[0]
     if (!selected) return
 
-    // Проверяем, что это видео
     if (!selected.type.startsWith("video/")) {
       setStatus("Выберите видеофайл")
       return
@@ -101,7 +100,7 @@ export default function VideoUploader() {
     if (!uploadedFileName) return
 
     try {
-      const res = await fetch(`/api/proxy/delete?filename=${encodeURIComponent(uploadedFileName)}`, {
+      const res = await fetch(`/api/proxy/delete/${encodeURIComponent(uploadedFileName)}`, {
         method: "DELETE",
       })
 
@@ -139,13 +138,13 @@ export default function VideoUploader() {
             accept="video/*"
             onChange={handleFileChange}
             disabled={uploading}
-            className="block w-full text-sm text-gray-400
-                       file:mr-4 file:py-3 file:px-6
-                       file:rounded-lg file:border-0
-                       file:text-sm file:font-semibold
-                       file:bg-blue-600 file:text-white
-                       hover:file:bg-blue-700
-                       disabled:opacity-50 disabled:cursor-not-allowed"
+            className={[
+              "block w-full text-sm text-gray-400",
+              "file:mr-4 file:py-3 file:px-6 file:rounded-lg file:border-0",
+              "file:text-sm file:font-semibold file:bg-blue-600 file:text-white",
+              "hover:file:bg-blue-700",
+              "disabled:opacity-50 disabled:cursor-not-allowed",
+            ].join(" ")}
           />
         </div>
 
@@ -174,8 +173,11 @@ export default function VideoUploader() {
           <button
             type="submit"
             disabled={!file || uploading}
-            className="flex-1 py-3 px-6 bg-blue-600 rounded-lg font-medium
-                       hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            className={[
+              "flex-1 py-3 px-6 bg-blue-600 rounded-lg font-medium",
+              "hover:bg-blue-700",
+              "disabled:opacity-50 disabled:cursor-not-allowed",
+            ].join(" ")}
           >
             {uploading ? `Загружается... ${progress}%` : "Отправить на обработку"}
           </button>
@@ -184,7 +186,10 @@ export default function VideoUploader() {
             <button
               type="button"
               onClick={handleCancel}
-              className="py-3 px-6 bg-red-600/80 rounded-lg font-medium hover:bg-red-700"
+              className={[
+                "py-3 px-6 bg-red-600/80 rounded-lg font-medium",
+                "hover:bg-red-700",
+              ].join(" ")}
             >
               Отмена
             </button>
@@ -199,24 +204,32 @@ export default function VideoUploader() {
             <div
               className="bg-blue-600 h-2.5 rounded-full transition-all duration-300"
               style={{ width: `${progress}%` }}
-            ></div>
+            />
           </div>
           <p className="text-center mt-2 text-sm text-gray-400">{progress}%</p>
         </div>
       )}
 
-      {/* Статус и действия после загрузки */}
+      {/* Статус */}
       {status && (
-        <p className={`mt-6 text-center text-lg ${status.includes("Готово") ? "text-green-400" : "text-yellow-400"}`}>
+        <p
+          className={`mt-6 text-center text-lg ${
+            status.includes("Готово") ? "text-green-400" : "text-yellow-400"
+          }`}
+        >
           {status}
         </p>
       )}
 
+      {/* Кнопка удаления после загрузки */}
       {uploadedFileName && (
         <div className="mt-6 flex justify-center">
           <button
             onClick={handleDelete}
-            className="py-2 px-6 bg-red-600/70 rounded-lg hover:bg-red-700 transition"
+            className={[
+              "py-2 px-6 bg-red-600/70 rounded-lg",
+              "hover:bg-red-700 transition",
+            ].join(" ")}
           >
             Удалить загруженный файл
           </button>
