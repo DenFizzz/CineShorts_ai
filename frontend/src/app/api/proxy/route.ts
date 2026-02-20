@@ -21,5 +21,30 @@ export async function POST(request: NextRequest) {
   }
 }
 
+export async function DELETE(request: NextRequest) {
+  try {
+    const { searchParams } = new URL(request.url)
+    const filename = searchParams.get("filename")
+
+    if (!filename) {
+      return NextResponse.json({ error: "filename required" }, { status: 400 })
+    }
+
+    const res = await fetch(`http://127.0.0.1:8000/delete/${encodeURIComponent(filename)}`, {
+      method: "DELETE",
+    })
+
+    const data = await res.json()
+
+    if (!res.ok) {
+      return NextResponse.json(data, { status: res.status })
+    }
+
+    return NextResponse.json(data)
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message }, { status: 500 })
+  }
+}
+
 export const dynamic = "force-dynamic";
 export const bodyParser = false
