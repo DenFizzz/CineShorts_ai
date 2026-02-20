@@ -1,78 +1,143 @@
-from fastapi import FastAPI, UploadFile, File, HTTPException
-from fastapi.responses import JSONResponse
-from pathlib import Path
-import shutil
+from fastapi import FastAPI, UploadFile, File, Query, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 import os
-import time
-from scenedetect import detect, AdaptiveDetector
+import subprocess
+from scenedetect import detect, ContentDetector
+from typing import List, Dict
 
-app = FastAPI()
+app = FastAPI(title="CineShorts Scene Detection")
 
-# Папка для загруженных видео
-UPLOAD_DIR = Path("uploads")
-UPLOAD_DIR.mkdir(exist_ok=True)
+# Разрешаем фронту с localhost:3000 обращаться ко всем методам
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+UPLOAD_DIR = "uploads"
+os.makedirs(UPLOAD_DIR, exist_ok=True)
+
 
 @app.post("/upload/")
 async def upload_video(file: UploadFile = File(...)):
-    if not file.content_type.startswith("video/"):
-        raise HTTPException(status_code=400, detail="Только видеофайлы")
-
-    file_path = UPLOAD_DIR / file.filename
-    with file_path.open("wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
-
-    size_mb = file_path.stat().st_size / (1024 * 1024)
-    return {
-        "message": "Файл загружен",
-        "filename": file.filename,
-        "size_mb": round(size_mb, 2)
-    }
-
-@app.delete("/delete")
-async def delete_video(filename: str):
-    file_path = UPLOAD_DIR / filename
-    if not file_path.exists():
-        raise HTTPException(status_code=404, detail="Файл не найден")
+    print(f"[UPLOAD] Получен файл: {file.filename}")
     
-    file_path.unlink()
-    return {"message": f"Файл {filename} удалён"}
+    file_path = os.path.join(UPLOAD_DIR, file.filename)
+    
+    try:
+        content = await file.read()
+        with open(file_path, "wb") as f:
+            f.write(content)
+        print(f"[UPLOAD] Успешно сохранён → {file_path}")
+        return {"filename": file.filename}
+    except Exception as e:
+        print(f"[UPLOAD] Ошибка сохранения: {type(e).__name__} → {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Ошибка при сохранении файла: {str(e)}")
+
 
 @app.post("/process")
-async def process_video(filename: str):
-    video_path = UPLOAD_DIR / filename
-    if not video_path.exists():
-        raise HTTPException(status_code=404, detail="Видео не найдено")
+async def process_video(filename: str = Query(...)):
+    print("╔════════════════════════════════════╗")
+    print(f"║ [PROCESS] Вызван                   ║")
+    print(f"║ filename = '{filename}'            ║")
+    print(f"║ cwd      = {os.getcwd()}           ║")
+    print("╚════════════════════════════════════╝")
 
-    start_time = time.time()
+    file_path = os.path.join(UPLOAD_DIR, filename)
 
+    if not os.path.exists(file_path):
+        print(f"[PROCESS] Файл НЕ НАЙДЕН: {file_path}")
+        raise HTTPException(status_code=404, detail=f"Видео не найдено: {filename}")
+
+    print(f"[PROCESS] Файл найден: {file_path}")
+
+    # Получаем длительность (опционально, для контроля)
+    duration = 0.0
     try:
-        scenes = detect(
-            str(video_path),
-            AdaptiveDetector(threshold=3.0, min_scene_len=15),
+        result = subprocess.run(
+            ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+             "-of", "default=noprint_wrappers=1:nokey=1", file_path],
+            capture_output=True, text=True, check=True
         )
+        duration = float(result.stdout.strip())
+        print(f"[PROCESS] Длительность: {duration:.2f} сек")
+    except Exception as e:
+        print(f"[PROCESS] ffprobe не сработал: {e}")
 
-        scene_list = []
-        for i, scene in enumerate(scenes):
+    # ─── Поиск сцен через PySceneDetect ────────────────────────────────
+    try:
+        print("[PROCESS] Запуск ContentDetector (threshold=27)...")
+        scene_list = detect(file_path, ContentDetector(threshold=27.0))
+
+        scenes: List[Dict] = []
+        for i, scene in enumerate(scene_list):
             start_sec = scene[0].get_seconds()
             end_sec = scene[1].get_seconds()
-            duration = end_sec - start_sec
-
-            scene_list.append({
-                "scene_id": i + 1,
-                "start_time": round(start_sec, 2),
-                "end_time": round(end_sec, 2),
-                "duration": round(duration, 2),
+            
+            scenes.append({
+                "start": f"{int(start_sec // 60):02d}:{int(start_sec % 60):02d}",
+                "end": f"{int(end_sec // 60):02d}:{int(end_sec % 60):02d}",
+                "duration": round(end_sec - start_sec, 1)
             })
 
-        processing_time = round(time.time() - start_time, 2)
+        print(f"[PROCESS] Найдено сцен: {len(scenes)}")
 
         return {
-            "message": "Сцены обработаны",
-            "filename": filename,
+            "status": "processed",
+            "video_duration": round(duration, 1),
+            "scenes": scenes,
             "scene_count": len(scenes),
-            "scenes": scene_list,
-            "processing_time_sec": processing_time
+            "method": "PySceneDetect ContentDetector threshold=27"
         }
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Ошибка обработки: {str(e)}")
+        print(f"[PROCESS] PySceneDetect упал: {type(e).__name__} → {str(e)}")
+        return {
+            "status": "error",
+            "video_duration": round(duration, 1),
+            "scenes": [],
+            "scene_count": 0,
+            "error": str(e)
+        }
+
+
+@app.delete("/delete")
+async def delete_video(filename: str = Query(...)):
+    print(f"[DELETE] Запрос на удаление: {filename}")
+    
+    file_path = os.path.join(UPLOAD_DIR, filename)
+    
+    if os.path.exists(file_path):
+        try:
+            os.remove(file_path)
+            print(f"[DELETE] Удалён: {file_path}")
+            return {"status": "deleted", "filename": filename}
+        except Exception as e:
+            print(f"[DELETE] Ошибка удаления: {e}")
+            raise HTTPException(status_code=500, detail=f"Не удалось удалить файл: {str(e)}")
+    
+    print(f"[DELETE] Файл не найден: {file_path}")
+    raise HTTPException(status_code=404, detail=f"Файл не найден: {filename}")
+
+
+# Для быстрого теста, что бэкенд вообще жив
+@app.get("/debug-test")
+async def debug_test():
+    return {"status": "ok", "cwd": os.getcwd(), "upload_dir_exists": os.path.exists(UPLOAD_DIR)}
+
+
+@app.get("/uploads/list")
+async def list_uploads() -> List[str]:
+    """Возвращает список имён всех файлов в папке uploads"""
+    try:
+        files = [
+            f for f in os.listdir(UPLOAD_DIR)
+            if os.path.isfile(os.path.join(UPLOAD_DIR, f))
+        ]
+        print(f"[LIST] Найдено файлов в uploads: {len(files)}")
+        return sorted(files)  # можно сортировать по имени или по дате
+    except Exception as e:
+        print(f"[LIST] Ошибка при чтении папки: {e}")
+        return []

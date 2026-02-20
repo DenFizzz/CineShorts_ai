@@ -1,303 +1,339 @@
+// src/components/VideoUploader.tsx
 "use client"
 
-import { useState, useRef } from "react"
+import { useState, useEffect } from "react"
+import axios from "axios"
 
 export default function VideoUploader() {
   const [file, setFile] = useState<File | null>(null)
-  const [status, setStatus] = useState<string>("")
-  const [progress, setProgress] = useState<number>(0)
-  const [uploading, setUploading] = useState<boolean>(false)
+  const [uploading, setUploading] = useState(false)
+  const [uploadProgress, setUploadProgress] = useState(0)
   const [uploadedFileName, setUploadedFileName] = useState<string | null>(null)
-  const [scenes, setScenes] = useState<any[]>([])           // массив сцен после обработки
-  const [processing, setProcessing] = useState<boolean>(false)
+  const [selectedFileName, setSelectedFileName] = useState<string | null>(null)
+  const [uploadedFiles, setUploadedFiles] = useState<string[]>([])
+  const [loadingFiles, setLoadingFiles] = useState(true)
+  const [processing, setProcessing] = useState(false)
+  const [scenes, setScenes] = useState<any[]>([])
+  const [sceneCount, setSceneCount] = useState(0)
+  const [error, setError] = useState<string | null>(null)
 
-  const abortController = useRef<AbortController | null>(null)
-  const fileInputRef = useRef<HTMLInputElement>(null)
+  const scenesPerPage = 12
+  const [currentPage, setCurrentPage] = useState(1)
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const selected = e.target.files?.[0]
-    if (!selected) return
-
-    if (!selected.type.startsWith("video/")) {
-      setStatus("Выберите видеофайл")
-      return
-    }
-
-    setFile(selected)
-    setStatus("")
-    setProgress(0)
-    setUploadedFileName(null)
-    setScenes([])           // сбрасываем сцены при новом файле
-  }
-
-  const formatFileSize = (bytes: number) => {
-    if (bytes === 0) return "0 Bytes"
-    const k = 1024
-    const sizes = ["Bytes", "KB", "MB", "GB"]
-    const i = Math.floor(Math.log(bytes) / Math.log(k))
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i]
-  }
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!file) return
-
-    setUploading(true)
-    setStatus("Загрузка...")
-    setProgress(0)
-    setScenes([])
-
-    const formData = new FormData()
-    formData.append("file", file)
-
-    abortController.current = new AbortController()
-
-    const xhr = new XMLHttpRequest()
-
-    xhr.upload.onprogress = (event) => {
-      if (event.lengthComputable) {
-        const percent = Math.round((event.loaded * 100) / event.total)
-        setProgress(percent)
-      }
-    }
-
-    xhr.onload = () => {
-      setUploading(false)
-      if (xhr.status >= 200 && xhr.status < 300) {
-        try {
-          const data = JSON.parse(xhr.responseText)
-          setStatus(`Готово! ${data.filename} (${data.size_mb.toFixed(1)} MB)`)
-          setUploadedFileName(data.filename)
-        } catch {
-          setStatus("Ошибка обработки ответа")
-        }
-      } else {
-        setStatus(`Ошибка сервера: ${xhr.status}`)
-      }
-      abortController.current = null
-    }
-
-    xhr.onerror = () => {
-      setUploading(false)
-      setStatus("Ошибка сети")
-      abortController.current = null
-    }
-
-    xhr.onabort = () => {
-      setUploading(false)
-      setStatus("Загрузка отменена")
-      setProgress(0)
-      abortController.current = null
-    }
-
-    xhr.open("POST", "/api/proxy")
-    xhr.send(formData)
-  }
-
-  const handleCancel = () => {
-    if (abortController.current) {
-      abortController.current.abort()
-    }
-  }
-
-  const handleDelete = async () => {
-    if (!uploadedFileName) return
-
+  const fetchUploadedFiles = async () => {
+    setLoadingFiles(true)
     try {
-      const res = await fetch(`/api/proxy/delete?filename=${encodeURIComponent(uploadedFileName)}`, {
-        method: "DELETE",
-      })
-
-      if (res.ok) {
-        setStatus("Файл удалён с сервера")
-        setUploadedFileName(null)
-        setFile(null)
-        setScenes([])
-        if (fileInputRef.current) fileInputRef.current.value = ""
-      } else {
-        setStatus("Не удалось удалить файл")
+      const res = await axios.get("/api/proxy/uploads/list")
+      setUploadedFiles(res.data)
+      if (res.data.length > 0 && !selectedFileName) {
+        const first = res.data[0]
+        setSelectedFileName(first)
+        setUploadedFileName(first)
       }
     } catch (err: any) {
-      setStatus("Ошибка при удалении: " + err.message)
+      console.error("Ошибка загрузки списка файлов:", err)
+      setError("Не удалось загрузить список видео")
+    } finally {
+      setLoadingFiles(false)
     }
   }
 
-  const handleClear = () => {
-    setFile(null)
-    setStatus("")
-    setProgress(0)
-    setUploadedFileName(null)
-    setScenes([])
-    if (fileInputRef.current) fileInputRef.current.value = ""
+  useEffect(() => {
+    fetchUploadedFiles()
+  }, [])
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files?.[0]) {
+      setFile(e.target.files[0])
+      setError(null)
+      setScenes([])
+      setSceneCount(0)
+      setSelectedFileName(null)
+      setUploadedFileName(null)
+      setCurrentPage(1)
+    }
+  }
+
+  const handleUpload = async () => {
+    if (!file) return
+    setUploading(true)
+    setError(null)
+    setUploadProgress(0)
+
+    try {
+      const formData = new FormData()
+      formData.append("file", file)
+
+      const res = await axios.post("/api/proxy/upload", formData, {
+        headers: { "Content-Type": "multipart/form-data" },
+        onUploadProgress: (progressEvent) => {
+          if (progressEvent.total) {
+            const percent = Math.round((progressEvent.loaded * 100) / progressEvent.total)
+            setUploadProgress(percent)
+          }
+        },
+      })
+
+      const newName = res.data.filename || file.name
+      setUploadedFileName(newName)
+      setSelectedFileName(newName)
+      setUploadedFiles(prev => [...new Set([...prev, newName])].sort())
+      setFile(null)
+      setUploadProgress(0)
+      fetchUploadedFiles()
+    } catch (err: any) {
+      setError(err.message || "Ошибка загрузки")
+    } finally {
+      setUploading(false)
+    }
   }
 
   const handleProcess = async () => {
     if (!uploadedFileName) return
-
     setProcessing(true)
-    setStatus("Обнаружение сцен...")
-    setScenes([])
+    setError(null)
 
     try {
-      const res = await fetch(`/api/proxy/process?filename=${encodeURIComponent(uploadedFileName)}`, {
-        method: "POST",
-      })
-
-      if (res.ok) {
-        const data = await res.json()
-        setScenes(data.scenes || [])
-        setStatus(`Готово! Найдено ${data.scene_count} сцен за ${data.processing_time_sec} сек`)
-      } else {
-        setStatus("Ошибка обработки сцен")
-      }
+      const res = await axios.post(`/api/proxy/process?filename=${encodeURIComponent(uploadedFileName)}`)
+      const data = res.data
+      setScenes(data.scenes || [])
+      setSceneCount(data.scene_count || data.scenes?.length || 0)
     } catch (err: any) {
-      setStatus("Не удалось запустить обработку: " + err.message)
+      setError(err.message || "Ошибка анализа видео")
     } finally {
       setProcessing(false)
     }
   }
 
+  const handleDelete = async () => {
+    if (!uploadedFileName) return
+    try {
+      await axios.delete(`/api/proxy/delete?filename=${encodeURIComponent(uploadedFileName)}`)
+      setUploadedFiles(prev => prev.filter(f => f !== uploadedFileName))
+      setUploadedFileName(null)
+      setSelectedFileName(null)
+      setScenes([])
+      setSceneCount(0)
+      setCurrentPage(1)
+    } catch (err: any) {
+      setError(err.message || "Ошибка удаления")
+    }
+  }
+
+  const indexOfLastScene = currentPage * scenesPerPage
+  const indexOfFirstScene = indexOfLastScene - scenesPerPage
+  const currentScenes = scenes.slice(indexOfFirstScene, indexOfLastScene)
+  const totalPages = Math.ceil(scenes.length / scenesPerPage)
+
   return (
-    <div className="max-w-2xl mx-auto bg-gray-800 p-8 rounded-xl shadow-2xl border border-gray-700">
-      <form onSubmit={handleSubmit} className="space-y-6">
-        <div className="flex flex-col">
-          <label className="text-lg mb-2 text-gray-300">
-            Выберите видео
-          </label>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="video/*"
-            onChange={handleFileChange}
-            disabled={uploading}
-            className={[
-              "block w-full text-sm text-gray-400",
-              "file:mr-4 file:py-3 file:px-6 file:rounded-lg file:border-0",
-              "file:text-sm file:font-semibold file:bg-blue-600 file:text-white",
-              "hover:file:bg-blue-700",
-              "disabled:opacity-50 disabled:cursor-not-allowed",
-            ].join(" ")}
-          />
+    <div className="min-h-screen bg-[#F3EFE7] text-[#212121] p-6 md:p-10 font-sans">
+      <div className="max-w-6xl mx-auto space-y-10">
+        {/* Заголовок */}
+        <div className="text-center">
+          <h1 className="text-5xl font-bold tracking-tight text-[#D97757]">
+            CineShorts
+          </h1>
+          <p className="mt-3 text-lg text-[#A0A0A0]">
+            Разбиение видео на сцены одним кликом
+          </p>
         </div>
 
-        {file && (
-          <div className="bg-gray-900 p-4 rounded-lg border border-gray-700">
-            <div className="flex justify-between items-center mb-2">
-              <div>
-                <p className="font-medium text-white">{file.name}</p>
-                <p className="text-sm text-gray-400">
-                  {formatFileSize(file.size)} · {file.type || "video/*"}
-                </p>
+        {/* Список загруженных файлов */}
+        <div className="bg-[#E9E3D8] border border-[#D4C9B8] rounded-2xl p-6 shadow-sm">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-medium text-[#212121]">
+              Видео на сервере
+            </h3>
+            <button
+              onClick={fetchUploadedFiles}
+              disabled={loadingFiles}
+              className="px-4 py-1.5 bg-[#FAF9F6] hover:bg-[#F0EDE5] rounded-lg text-sm transition-colors disabled:opacity-50 border border-[#D4C9B8] text-[#212121]"
+            >
+              {loadingFiles ? "Обновление..." : "Обновить"}
+            </button>
+          </div>
+
+          {loadingFiles ? (
+            <div className="text-center py-8 text-[#A0A0A0]">Загружаем список...</div>
+          ) : uploadedFiles.length === 0 ? (
+            <div className="text-center py-10 text-[#A0A0A0] border border-dashed border-[#D4C9B8] rounded-xl">
+              Пока нет загруженных видео<br />
+              <span className="text-sm">Загрузите первое ↓</span>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+              {uploadedFiles.map(fname => (
+                <button
+                  key={fname}
+                  onClick={() => {
+                    setSelectedFileName(fname)
+                    setUploadedFileName(fname)
+                    setFile(null)
+                    setScenes([])
+                    setSceneCount(0)
+                  }}
+                  className={`px-5 py-3 rounded-xl text-left transition-all duration-200 border ${
+                    selectedFileName === fname
+                      ? "bg-[#FFFFFF] border-[#D97757]/40 shadow-sm text-[#212121]"
+                      : "bg-[#FFFFFF] border-[#E9E3D8] hover:bg-[#FAF9F6] hover:border-[#D4C9B8] text-[#212121]"
+                  }`}
+                >
+                  {fname}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Зона загрузки нового файла */}
+        <div
+          className={`border-2 border-dashed rounded-2xl p-10 md:p-14 text-center transition-all ${
+            file
+              ? "border-[#D97757]/60 bg-[#FAF9F6]"
+              : "border-[#D4C9B8] hover:border-[#A0A0A0] bg-[#FFFFFF]"
+          }`}
+        >
+          <input
+            type="file"
+            accept="video/mp4,video/webm"
+            onChange={handleFileChange}
+            className="hidden"
+            id="video-upload"
+          />
+          <label
+            htmlFor="video-upload"
+            className="cursor-pointer text-xl font-medium text-[#D97757] hover:text-[#c45f3f] transition-colors"
+          >
+            {file ? file.name : "Загрузить новое видео"}
+          </label>
+        </div>
+
+        {/* Кнопка загрузки + прогресс */}
+        <div className="flex flex-col items-center gap-5">
+          <button
+            onClick={handleUpload}
+            disabled={!file || uploading}
+            className={`px-10 py-4 rounded-xl font-semibold text-lg transition-all duration-300 shadow-md ${
+              uploading
+                ? "bg-[#E9E3D8] text-[#A0A0A0] cursor-not-allowed"
+                : "bg-[#D97757] hover:bg-[#c45f3f] active:bg-[#a94a38] text-white shadow-[#D97757]/30"
+            }`}
+          >
+            {uploading ? "Загружается..." : "Отправить на сервер"}
+          </button>
+
+          {uploading && (
+            <div className="w-full max-w-lg">
+              <div className="w-full bg-[#E9E3D8] rounded-full h-2.5 overflow-hidden">
+                <div
+                  className="bg-[#D97757] h-2.5 rounded-full transition-all duration-200 ease-out"
+                  style={{ width: `${uploadProgress}%` }}
+                />
               </div>
+              <p className="text-center mt-3 text-sm text-[#A0A0A0]">
+                {uploadProgress}% — {file?.name}
+              </p>
+            </div>
+          )}
+        </div>
+
+        {/* Управление выбранным файлом */}
+        {uploadedFileName && (
+          <div className="bg-[#FFFFFF] border border-[#E9E3D8] rounded-2xl p-6 md:p-8 shadow-sm">
+            <p className="text-lg mb-5">
+              Выбран: <span className="text-[#D97757] font-medium">{uploadedFileName}</span>
+            </p>
+
+            <div className="flex flex-wrap gap-4">
               <button
-                type="button"
-                onClick={handleClear}
-                disabled={uploading}
-                className="text-red-400 hover:text-red-300 disabled:opacity-50"
+                onClick={handleProcess}
+                disabled={processing}
+                className={`px-8 py-3.5 rounded-xl font-medium transition-all duration-300 shadow-md ${
+                  processing
+                    ? "bg-[#E9E3D8] text-[#A0A0A0] cursor-not-allowed"
+                    : "bg-[#D97757] hover:bg-[#c45f3f] active:bg-[#a94a38] text-white shadow-[#D97757]/30"
+                }`}
               >
-                × Убрать
+                {processing ? "Анализирую..." : "Найти сцены"}
+              </button>
+
+              <button
+                onClick={handleDelete}
+                className="px-8 py-3.5 bg-[#A0A0A0] hover:bg-[#8a8a8a] rounded-xl font-medium text-white transition-all duration-300 shadow-gray-400/30"
+              >
+                Удалить
               </button>
             </div>
           </div>
         )}
 
-        <div className="flex gap-4">
-          <button
-            type="submit"
-            disabled={!file || uploading}
-            className={[
-              "flex-1 py-3 px-6 bg-blue-600 rounded-lg font-medium",
-              "hover:bg-blue-700",
-              "disabled:opacity-50 disabled:cursor-not-allowed",
-            ].join(" ")}
-          >
-            {uploading ? `Загружается... ${progress}%` : "Отправить на сервер"}
-          </button>
+        {/* Результаты анализа */}
+        {sceneCount > 0 && (
+          <div className="space-y-8">
+            <h2 className="text-3xl font-bold tracking-tight">
+              Найдено сцен: <span className="text-[#D97757]">{sceneCount}</span>
+            </h2>
 
-          {uploading && (
-            <button
-              type="button"
-              onClick={handleCancel}
-              className={[
-                "py-3 px-6 bg-red-600/80 rounded-lg font-medium",
-                "hover:bg-red-700",
-              ].join(" ")}
-            >
-              Отмена
-            </button>
-          )}
-        </div>
-      </form>
-
-      {/* Прогресс-бар */}
-      {uploading && (
-        <div className="mt-6">
-          <div className="w-full bg-gray-700 rounded-full h-2.5">
-            <div
-              className="bg-blue-600 h-2.5 rounded-full transition-all duration-300"
-              style={{ width: `${progress}%` }}
-            />
-          </div>
-          <p className="text-center mt-2 text-sm text-gray-400">{progress}%</p>
-        </div>
-      )}
-
-      {/* Статус */}
-      {status && (
-        <p
-          className={`mt-6 text-center text-lg ${
-            status.includes("Готово") ? "text-green-400" : "text-yellow-400"
-          }`}
-        >
-          {status}
-        </p>
-      )}
-
-      {/* Блок действий после загрузки */}
-      {uploadedFileName && (
-        <div className="mt-8 space-y-4">
-          <div className="flex gap-4 justify-center">
-            <button
-              onClick={handleProcess}
-              disabled={processing}
-              className={[
-                "py-3 px-8 bg-green-600 rounded-lg font-medium text-white",
-                "hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed",
-              ].join(" ")}
-            >
-              {processing ? "Обработка..." : "Начать работу"}
-            </button>
-
-            <button
-              onClick={handleDelete}
-              className={[
-                "py-3 px-8 bg-red-600/80 rounded-lg font-medium text-white",
-                "hover:bg-red-700",
-              ].join(" ")}
-            >
-              Удалить файл
-            </button>
-          </div>
-
-          {/* Список найденных сцен */}
-          {scenes.length > 0 && (
-            <div className="mt-6 bg-gray-900 p-6 rounded-xl border border-gray-700">
-              <h3 className="text-lg font-medium mb-4 text-white">Найденные сцены</h3>
-              <ul className="space-y-3 text-gray-300">
-                {scenes.map((scene) => (
-                  <li key={scene.scene_id} className="flex justify-between">
-                    <span>Сцена {scene.scene_id}</span>
-                    <span>
-                      {scene.start_time} → {scene.end_time} сек
-                      <span className="ml-3 text-gray-500">({scene.duration} сек)</span>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+              {currentScenes.map((scene, idx) => (
+                <div
+                  key={idx}
+                  className="
+                    group relative rounded-2xl overflow-hidden
+                    bg-[#FFFFFF] border border-[#E9E3D8]
+                    shadow-sm hover:shadow-md hover:border-[#D4C9B8]
+                    transition-all duration-300 hover:scale-[1.02]
+                  "
+                >
+                  <div className="aspect-video bg-[#FAF9F6] flex items-center justify-center">
+                    <span className="text-[#A0A0A0] text-sm font-mono">
+                      сцена {indexOfFirstScene + idx + 1}
                     </span>
-                  </li>
-                ))}
-              </ul>
+                  </div>
+
+                  <div className="absolute top-4 left-4 bg-[#FFFFFF]/90 backdrop-blur-sm px-3.5 py-1.5 rounded-lg text-[#D97757] font-mono text-sm tracking-wide shadow-sm">
+                    {scene.start}
+                  </div>
+
+                  <div className="absolute bottom-4 right-4 bg-[#FFFFFF]/80 px-3 py-1 rounded-lg text-[#212121] text-sm font-medium">
+                    {scene.duration} сек
+                  </div>
+                </div>
+              ))}
             </div>
-          )}
-        </div>
-      )}
+
+            {totalPages > 1 && (
+              <div className="flex justify-center items-center gap-4 mt-10 flex-wrap">
+                <button
+                  onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                  disabled={currentPage === 1}
+                  className="px-6 py-2.5 bg-[#FFFFFF] hover:bg-[#FAF9F6] disabled:opacity-40 disabled:cursor-not-allowed rounded-lg border border-[#E9E3D8] transition-colors text-[#212121]"
+                >
+                  ← Назад
+                </button>
+
+                <span className="px-6 py-2.5 bg-[#FAF9F6] rounded-lg border border-[#E9E3D8] text-[#A0A0A0] font-medium">
+                  {currentPage} / {totalPages}
+                </span>
+
+                <button
+                  onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                  disabled={currentPage === totalPages}
+                  className="px-6 py-2.5 bg-[#FFFFFF] hover:bg-[#FAF9F6] disabled:opacity-40 disabled:cursor-not-allowed rounded-lg border border-[#E9E3D8] transition-colors text-[#212121]"
+                >
+                  Вперед →
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {error && (
+          <div className="text-center text-[#D97757] font-medium mt-8 bg-[#FAF9F6] border border-[#D4C9B8] rounded-xl p-5">
+            {error}
+          </div>
+        )}
+      </div>
     </div>
   )
 }
