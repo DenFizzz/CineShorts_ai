@@ -1,0 +1,22 @@
+# Next.js
+.next/
+out/
+node_modules/
+.vercel
+
+# Python / venv
+backend/venv/
+backend/__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+.env
+.env.local
+
+# Загруженные видео — никогда не коммитим
+backend/uploads/
+
+# macOS + прочий мусор
+.DS_Store
+*.log
