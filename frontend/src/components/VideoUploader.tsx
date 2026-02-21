@@ -1,8 +1,9 @@
-// src/components/VideoUploader.tsx
 "use client"
 
 import { useState, useEffect } from "react"
 import axios from "axios"
+import { Moon, Sun } from "lucide-react"
+import { useTheme } from "next-themes"
 
 export default function VideoUploader() {
   const [file, setFile] = useState<File | null>(null)
@@ -19,6 +20,8 @@ export default function VideoUploader() {
 
   const scenesPerPage = 12
   const [currentPage, setCurrentPage] = useState(1)
+
+  const { theme, setTheme } = useTheme()
 
   // ─── Загрузка списка файлов при монтировании ───────────────────────────────
   const fetchUploadedFiles = async () => {
@@ -62,7 +65,7 @@ export default function VideoUploader() {
     }
   }
 
-  // Авто-выбор первого файла и попытка загрузки кэша при старте
+  // Авто-выбор первого файла
   useEffect(() => {
     if (uploadedFiles.length > 0 && !uploadedFileName) {
       const first = uploadedFiles[0]
@@ -71,7 +74,7 @@ export default function VideoUploader() {
     }
   }, [uploadedFiles])
 
-  // Загрузка сцен при смене uploadedFileName
+  // Загрузка сцен при смене выбранного файла
   useEffect(() => {
     if (uploadedFileName) {
       setScenes([])
@@ -170,35 +173,54 @@ export default function VideoUploader() {
   const totalPages = Math.ceil(scenes.length / scenesPerPage)
 
   return (
-    <div className="min-h-screen bg-[#F3EFE7] text-[#212121] p-6 md:p-10 font-sans">
+    <div className="min-h-screen bg-[var(--background)] text-[var(--text-primary)] p-6 md:p-10 font-sans relative">
+      {/* Кнопка смены темы */}
+      <div className="absolute top-6 right-6 z-10">
+        <button
+          onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+          className="p-3 rounded-full bg-[var(--surface)] border border-[var(--border-light)] hover:bg-[var(--surface-hover)] transition-colors shadow-sm"
+          aria-label="Переключить тему"
+        >
+          {theme === "dark" ? (
+            <Sun className="w-5 h-5 text-[var(--text-primary)]" />
+          ) : (
+            <Moon className="w-5 h-5 text-[var(--text-primary)]" />
+          )}
+        </button>
+      </div>
+
       <div className="max-w-6xl mx-auto space-y-10">
         {/* Заголовок */}
         <div className="text-center">
-          <h1 className="text-5xl font-bold tracking-tight text-[#D97757]">
+          <h1 className="text-5xl font-bold tracking-tight text-[var(--accent)]">
             CineShorts
           </h1>
-          <p className="mt-3 text-lg text-[#A0A0A0]">
+          <p className="mt-3 text-lg text-[var(--text-secondary)]">
             Разбиение видео на сцены одним кликом
           </p>
         </div>
 
         {/* Список загруженных файлов */}
-        <div className="bg-[#E9E3D8] border border-[#D4C9B8] rounded-2xl p-6 shadow-sm">
+        <div className="bg-[var(--surface)] border border-[var(--border-light)] rounded-2xl p-6 shadow-[var(--shadow)]">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-medium text-[#212121]">Видео на сервере</h3>
+            <h3 className="text-lg font-medium text-[var(--text-primary)]">
+              Видео на сервере
+            </h3>
             <button
               onClick={fetchUploadedFiles}
               disabled={loadingFiles}
-              className="px-4 py-1.5 bg-[#FAF9F6] hover:bg-[#F0EDE5] rounded-lg text-sm transition-colors disabled:opacity-50 border border-[#D4C9B8] text-[#212121]"
+              className="px-4 py-1.5 bg-[var(--surface-light)] hover:bg-[var(--surface-hover)] rounded-lg text-sm transition-colors disabled:opacity-50 border border-[var(--border-light)] text-[var(--text-primary)]"
             >
               {loadingFiles ? "Обновление..." : "Обновить"}
             </button>
           </div>
 
           {loadingFiles ? (
-            <div className="text-center py-8 text-[#A0A0A0]">Загружаем список...</div>
+            <div className="text-center py-8 text-[var(--text-secondary)]">
+              Загружаем список...
+            </div>
           ) : uploadedFiles.length === 0 ? (
-            <div className="text-center py-10 text-[#A0A0A0] border border-dashed border-[#D4C9B8] rounded-xl">
+            <div className="text-center py-10 text-[var(--text-secondary)] border border-dashed border-[var(--border-light)] rounded-xl">
               Пока нет загруженных видео<br />
               <span className="text-sm">Загрузите первое ↓</span>
             </div>
@@ -216,8 +238,8 @@ export default function VideoUploader() {
                   }}
                   className={`px-5 py-3 rounded-xl text-left transition-all duration-200 border ${
                     selectedFileName === fname
-                      ? "bg-[#FFFFFF] border-[#D97757]/40 shadow-sm text-[#212121] font-medium"
-                      : "bg-[#FFFFFF] border-[#E9E3D8] hover:bg-[#FAF9F6] hover:border-[#D4C9B8] text-[#212121]"
+                      ? "bg-[var(--surface-light)] border-[var(--accent)]/40 shadow-sm text-[var(--text-primary)] font-medium"
+                      : "bg-[var(--surface)] border-[var(--border-light)] hover:bg-[var(--surface-hover)] hover:border-[var(--border)] text-[var(--text-primary)]"
                   }`}
                 >
                   {fname}
@@ -231,8 +253,8 @@ export default function VideoUploader() {
         <div
           className={`border-2 border-dashed rounded-2xl p-10 md:p-14 text-center transition-all ${
             file
-              ? "border-[#D97757]/60 bg-[#FAF9F6]"
-              : "border-[#D4C9B8] hover:border-[#A0A0A0] bg-[#FFFFFF]"
+              ? "border-[var(--accent)]/60 bg-[var(--surface-hover)]"
+              : "border-[var(--border-light)] hover:border-[var(--text-secondary)] bg-[var(--surface)]"
           }`}
         >
           <input
@@ -244,7 +266,7 @@ export default function VideoUploader() {
           />
           <label
             htmlFor="video-upload"
-            className="cursor-pointer text-xl font-medium text-[#D97757] hover:text-[#c45f3f] transition-colors"
+            className="cursor-pointer text-xl font-medium text-[var(--accent)] hover:text-[var(--accent-hover)] transition-colors"
           >
             {file ? file.name : "Загрузить новое видео"}
           </label>
@@ -257,8 +279,8 @@ export default function VideoUploader() {
             disabled={!file || uploading}
             className={`px-10 py-4 rounded-xl font-semibold text-lg transition-all duration-300 shadow-md ${
               uploading
-                ? "bg-[#E9E3D8] text-[#A0A0A0] cursor-not-allowed"
-                : "bg-[#D97757] hover:bg-[#c45f3f] active:bg-[#a94a38] text-white shadow-[#D97757]/30"
+                ? "bg-[var(--surface-light)] text-[var(--text-secondary)] cursor-not-allowed"
+                : "bg-[var(--accent)] hover:bg-[var(--accent-hover)] active:bg-[var(--accent-active)] text-white shadow-[0_4px_14px_rgba(217,119,87,0.3)]"
             }`}
           >
             {uploading ? "Загружается..." : "Отправить на сервер"}
@@ -266,13 +288,13 @@ export default function VideoUploader() {
 
           {uploading && (
             <div className="w-full max-w-lg">
-              <div className="w-full bg-[#E9E3D8] rounded-full h-2.5 overflow-hidden">
+              <div className="w-full bg-[var(--surface-light)] rounded-full h-2.5 overflow-hidden">
                 <div
-                  className="bg-[#D97757] h-2.5 rounded-full transition-all duration-200 ease-out"
+                  className="bg-[var(--accent)] h-2.5 rounded-full transition-all duration-200 ease-out"
                   style={{ width: `${uploadProgress}%` }}
                 />
               </div>
-              <p className="text-center mt-3 text-sm text-[#A0A0A0]">
+              <p className="text-center mt-3 text-sm text-[var(--text-secondary)]">
                 {uploadProgress}% — {file?.name}
               </p>
             </div>
@@ -281,9 +303,9 @@ export default function VideoUploader() {
 
         {/* Управление выбранным файлом */}
         {uploadedFileName && (
-          <div className="bg-[#FFFFFF] border border-[#E9E3D8] rounded-2xl p-6 md:p-8 shadow-sm">
+          <div className="bg-[var(--surface)] border border-[var(--border-light)] rounded-2xl p-6 md:p-8 shadow-[var(--shadow)]">
             <p className="text-lg mb-5">
-              Выбран: <span className="text-[#D97757] font-medium">{uploadedFileName}</span>
+              Выбран: <span className="text-[var(--accent)] font-medium">{uploadedFileName}</span>
             </p>
 
             <div className="flex flex-wrap gap-4">
@@ -292,8 +314,8 @@ export default function VideoUploader() {
                 disabled={processing}
                 className={`px-8 py-3.5 rounded-xl font-medium transition-all duration-300 shadow-md ${
                   processing
-                    ? "bg-[#E9E3D8] text-[#A0A0A0] cursor-not-allowed"
-                    : "bg-[#D97757] hover:bg-[#c45f3f] active:bg-[#a94a38] text-white shadow-[#D97757]/30"
+                    ? "bg-[var(--surface-light)] text-[var(--text-secondary)] cursor-not-allowed"
+                    : "bg-[var(--accent)] hover:bg-[var(--accent-hover)] active:bg-[var(--accent-active)] text-white shadow-[0_4px_14px_rgba(217,119,87,0.3)]"
                 }`}
               >
                 {processing ? "Анализирую..." : "Найти сцены"}
@@ -301,7 +323,7 @@ export default function VideoUploader() {
 
               <button
                 onClick={handleDelete}
-                className="px-8 py-3.5 bg-[#A0A0A0] hover:bg-[#8a8a8a] rounded-xl font-medium text-white transition-all duration-300 shadow-gray-400/30"
+                className="px-8 py-3.5 bg-[var(--text-secondary)] hover:bg-gray-700 rounded-xl font-medium text-white transition-all duration-300 shadow-md"
               >
                 Удалить
               </button>
@@ -313,7 +335,7 @@ export default function VideoUploader() {
         {sceneCount > 0 && (
           <div className="space-y-8">
             <h2 className="text-3xl font-bold tracking-tight">
-              Найдено сцен: <span className="text-[#D97757]">{sceneCount}</span>
+              Найдено сцен: <span className="text-[var(--accent)]">{sceneCount}</span>
             </h2>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
@@ -322,8 +344,8 @@ export default function VideoUploader() {
                   key={idx}
                   className="
                     group relative rounded-2xl overflow-hidden
-                    bg-[#FFFFFF] border border-[#E9E3D8]
-                    shadow-sm hover:shadow-md hover:border-[#D4C9B8]
+                    bg-[var(--surface)] border border-[var(--border-light)]
+                    shadow-[var(--shadow)] hover:shadow-md hover:border-[var(--border)]
                     transition-all duration-300
                   "
                 >
@@ -342,15 +364,15 @@ export default function VideoUploader() {
                   </div>
 
                   {/* Таймкоды */}
-                  <div className="absolute top-3 left-3 bg-[#FFFFFF]/90 backdrop-blur-sm px-3 py-1 rounded-lg text-[#D97757] font-mono text-sm shadow-sm">
+                  <div className="absolute top-3 left-3 bg-[var(--surface)]/90 backdrop-blur-sm px-3 py-1 rounded-lg text-[var(--accent)] font-mono text-sm shadow-sm">
                     {scene.start_sec.toFixed(1)} s
                   </div>
 
-                  <div className="absolute bottom-3 right-3 bg-[#FFFFFF]/85 px-3 py-1 rounded-lg text-[#212121] text-sm font-medium shadow-sm">
+                  <div className="absolute bottom-3 right-3 bg-[var(--surface)]/85 px-3 py-1 rounded-lg text-[var(--text-primary)] text-sm font-medium shadow-sm">
                     {scene.duration.toFixed(1)} сек
                   </div>
 
-                  <div className="absolute inset-0 bg-[#D97757]/5 opacity-0 group-hover:opacity-100 transition-opacity" />
+                  <div className="absolute inset-0 bg-[var(--accent)]/5 opacity-0 group-hover:opacity-100 transition-opacity" />
                 </div>
               ))}
             </div>
@@ -361,19 +383,19 @@ export default function VideoUploader() {
                 <button
                   onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
                   disabled={currentPage === 1}
-                  className="px-6 py-2.5 bg-[#FFFFFF] hover:bg-[#FAF9F6] disabled:opacity-40 disabled:cursor-not-allowed rounded-lg border border-[#E9E3D8] transition-colors text-[#212121]"
+                  className="px-6 py-2.5 bg-[var(--surface)] hover:bg-[var(--surface-hover)] disabled:opacity-40 disabled:cursor-not-allowed rounded-lg border border-[var(--border-light)] transition-colors text-[var(--text-primary)]"
                 >
                   ← Назад
                 </button>
 
-                <span className="px-6 py-2.5 bg-[#FAF9F6] rounded-lg border border-[#E9E3D8] text-[#A0A0A0] font-medium">
+                <span className="px-6 py-2.5 bg-[var(--surface-light)] rounded-lg border border-[var(--border-light)] text-[var(--text-secondary)] font-medium">
                   {currentPage} / {totalPages}
                 </span>
 
                 <button
                   onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
                   disabled={currentPage === totalPages}
-                  className="px-6 py-2.5 bg-[#FFFFFF] hover:bg-[#FAF9F6] disabled:opacity-40 disabled:cursor-not-allowed rounded-lg border border-[#E9E3D8] transition-colors text-[#212121]"
+                  className="px-6 py-2.5 bg-[var(--surface)] hover:bg-[var(--surface-hover)] disabled:opacity-40 disabled:cursor-not-allowed rounded-lg border border-[var(--border-light)] transition-colors text-[var(--text-primary)]"
                 >
                   Вперед →
                 </button>
@@ -383,7 +405,7 @@ export default function VideoUploader() {
         )}
 
         {error && (
-          <div className="text-center text-[#D97757] font-medium mt-8 bg-[#FAF9F6] border border-[#D4C9B8] rounded-xl p-5">
+          <div className="text-center text-[var(--accent)] font-medium mt-8 bg-[var(--surface-light)] border border-[var(--border-light)] rounded-xl p-5">
             {error}
           </div>
         )}

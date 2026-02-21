@@ -16,7 +16,7 @@ backend/__pycache__/
 
 # Загруженные видео — никогда не коммитим
 backend/uploads/
-backend/tumbnails/
+backend/thumbnails/
 backend/scenes_cache/
 
 # macOS + прочий мусор
