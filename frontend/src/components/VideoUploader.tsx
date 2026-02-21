@@ -20,6 +20,7 @@ export default function VideoUploader() {
   const scenesPerPage = 12
   const [currentPage, setCurrentPage] = useState(1)
 
+  // ─── Загрузка списка файлов при монтировании ───────────────────────────────
   const fetchUploadedFiles = async () => {
     setLoadingFiles(true)
     try {
@@ -41,6 +42,45 @@ export default function VideoUploader() {
   useEffect(() => {
     fetchUploadedFiles()
   }, [])
+
+  // ─── Загрузка сцен из кэша при выборе файла ────────────────────────────────
+  const fetchSavedScenes = async (fname: string) => {
+    try {
+      const res = await axios.get(`/api/proxy/scenes/${encodeURIComponent(fname)}`)
+      const data = res.data
+      if (data.from_cache && data.scene_count > 0) {
+        setScenes(data.scenes)
+        setSceneCount(data.scene_count)
+        console.log(`[SCENES] Загружены из кэша: ${data.scene_count} сцен`)
+        return true
+      }
+      console.log("[SCENES] Кэш пустой или не найден")
+      return false
+    } catch (err) {
+      console.warn("[SCENES] Ошибка при загрузке кэша сцен", err)
+      return false
+    }
+  }
+
+  // Авто-выбор первого файла и попытка загрузки кэша при старте
+  useEffect(() => {
+    if (uploadedFiles.length > 0 && !uploadedFileName) {
+      const first = uploadedFiles[0]
+      setSelectedFileName(first)
+      setUploadedFileName(first)
+    }
+  }, [uploadedFiles])
+
+  // Загрузка сцен при смене uploadedFileName
+  useEffect(() => {
+    if (uploadedFileName) {
+      setScenes([])
+      setSceneCount(0)
+      setProcessing(false)
+      setCurrentPage(1)
+      fetchSavedScenes(uploadedFileName)
+    }
+  }, [uploadedFileName])
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files?.[0]) {
@@ -269,7 +309,7 @@ export default function VideoUploader() {
           </div>
         )}
 
-        {/* Результаты анализа — здесь главная перемена */}
+        {/* Результаты анализа */}
         {sceneCount > 0 && (
           <div className="space-y-8">
             <h2 className="text-3xl font-bold tracking-tight">
@@ -287,14 +327,14 @@ export default function VideoUploader() {
                     transition-all duration-300
                   "
                 >
-                  {/* ─── Превью ──────────────────────────────────────── */}
+                  {/* Превью */}
                   <div className="aspect-video relative">
                     <img
                       src={`/api/proxy/thumbnail/${encodeURIComponent(uploadedFileName!)}/${scene.start_sec}`}
                       alt={`Scene ${indexOfFirstScene + idx + 1}`}
                       className="w-full h-full object-cover"
                       onError={(e) => {
-                        e.currentTarget.src = "/fallback-placeholder.jpg" // можно добавить заглушку
+                        e.currentTarget.src = "/fallback-placeholder.jpg"
                         e.currentTarget.alt = "Превью не загрузилось"
                       }}
                     />
