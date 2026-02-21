@@ -77,7 +77,7 @@ export default function VideoUploader() {
       const newName = res.data.filename || file.name
       setUploadedFileName(newName)
       setSelectedFileName(newName)
-      setUploadedFiles(prev => [...new Set([...prev, newName])].sort())
+      setUploadedFiles((prev) => [...new Set([...prev, newName])].sort())
       setFile(null)
       setUploadProgress(0)
       fetchUploadedFiles()
@@ -94,7 +94,9 @@ export default function VideoUploader() {
     setError(null)
 
     try {
-      const res = await axios.post(`/api/proxy/process?filename=${encodeURIComponent(uploadedFileName)}`)
+      const res = await axios.post(
+        `/api/proxy/process?filename=${encodeURIComponent(uploadedFileName)}`
+      )
       const data = res.data
       setScenes(data.scenes || [])
       setSceneCount(data.scene_count || data.scenes?.length || 0)
@@ -108,8 +110,10 @@ export default function VideoUploader() {
   const handleDelete = async () => {
     if (!uploadedFileName) return
     try {
-      await axios.delete(`/api/proxy/delete?filename=${encodeURIComponent(uploadedFileName)}`)
-      setUploadedFiles(prev => prev.filter(f => f !== uploadedFileName))
+      await axios.delete(
+        `/api/proxy/delete?filename=${encodeURIComponent(uploadedFileName)}`
+      )
+      setUploadedFiles((prev) => prev.filter((f) => f !== uploadedFileName))
       setUploadedFileName(null)
       setSelectedFileName(null)
       setScenes([])
@@ -141,9 +145,7 @@ export default function VideoUploader() {
         {/* Список загруженных файлов */}
         <div className="bg-[#E9E3D8] border border-[#D4C9B8] rounded-2xl p-6 shadow-sm">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-medium text-[#212121]">
-              Видео на сервере
-            </h3>
+            <h3 className="text-lg font-medium text-[#212121]">Видео на сервере</h3>
             <button
               onClick={fetchUploadedFiles}
               disabled={loadingFiles}
@@ -162,7 +164,7 @@ export default function VideoUploader() {
             </div>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
-              {uploadedFiles.map(fname => (
+              {uploadedFiles.map((fname) => (
                 <button
                   key={fname}
                   onClick={() => {
@@ -174,7 +176,7 @@ export default function VideoUploader() {
                   }}
                   className={`px-5 py-3 rounded-xl text-left transition-all duration-200 border ${
                     selectedFileName === fname
-                      ? "bg-[#FFFFFF] border-[#D97757]/40 shadow-sm text-[#212121]"
+                      ? "bg-[#FFFFFF] border-[#D97757]/40 shadow-sm text-[#212121] font-medium"
                       : "bg-[#FFFFFF] border-[#E9E3D8] hover:bg-[#FAF9F6] hover:border-[#D4C9B8] text-[#212121]"
                   }`}
                 >
@@ -185,7 +187,7 @@ export default function VideoUploader() {
           )}
         </div>
 
-        {/* Зона загрузки нового файла */}
+        {/* Зона загрузки */}
         <div
           className={`border-2 border-dashed rounded-2xl p-10 md:p-14 text-center transition-all ${
             file
@@ -267,7 +269,7 @@ export default function VideoUploader() {
           </div>
         )}
 
-        {/* Результаты анализа */}
+        {/* Результаты анализа — здесь главная перемена */}
         {sceneCount > 0 && (
           <div className="space-y-8">
             <h2 className="text-3xl font-bold tracking-tight">
@@ -282,30 +284,42 @@ export default function VideoUploader() {
                     group relative rounded-2xl overflow-hidden
                     bg-[#FFFFFF] border border-[#E9E3D8]
                     shadow-sm hover:shadow-md hover:border-[#D4C9B8]
-                    transition-all duration-300 hover:scale-[1.02]
+                    transition-all duration-300
                   "
                 >
-                  <div className="aspect-video bg-[#FAF9F6] flex items-center justify-center">
-                    <span className="text-[#A0A0A0] text-sm font-mono">
-                      сцена {indexOfFirstScene + idx + 1}
-                    </span>
+                  {/* ─── Превью ──────────────────────────────────────── */}
+                  <div className="aspect-video relative">
+                    <img
+                      src={`/api/proxy/thumbnail/${encodeURIComponent(uploadedFileName!)}/${scene.start_sec}`}
+                      alt={`Scene ${indexOfFirstScene + idx + 1}`}
+                      className="w-full h-full object-cover"
+                      onError={(e) => {
+                        e.currentTarget.src = "/fallback-placeholder.jpg" // можно добавить заглушку
+                        e.currentTarget.alt = "Превью не загрузилось"
+                      }}
+                    />
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent pointer-events-none" />
                   </div>
 
-                  <div className="absolute top-4 left-4 bg-[#FFFFFF]/90 backdrop-blur-sm px-3.5 py-1.5 rounded-lg text-[#D97757] font-mono text-sm tracking-wide shadow-sm">
-                    {scene.start}
+                  {/* Таймкоды */}
+                  <div className="absolute top-3 left-3 bg-[#FFFFFF]/90 backdrop-blur-sm px-3 py-1 rounded-lg text-[#D97757] font-mono text-sm shadow-sm">
+                    {scene.start_sec.toFixed(1)} s
                   </div>
 
-                  <div className="absolute bottom-4 right-4 bg-[#FFFFFF]/80 px-3 py-1 rounded-lg text-[#212121] text-sm font-medium">
-                    {scene.duration} сек
+                  <div className="absolute bottom-3 right-3 bg-[#FFFFFF]/85 px-3 py-1 rounded-lg text-[#212121] text-sm font-medium shadow-sm">
+                    {scene.duration.toFixed(1)} сек
                   </div>
+
+                  <div className="absolute inset-0 bg-[#D97757]/5 opacity-0 group-hover:opacity-100 transition-opacity" />
                 </div>
               ))}
             </div>
 
+            {/* Пагинация */}
             {totalPages > 1 && (
               <div className="flex justify-center items-center gap-4 mt-10 flex-wrap">
                 <button
-                  onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                  onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
                   disabled={currentPage === 1}
                   className="px-6 py-2.5 bg-[#FFFFFF] hover:bg-[#FAF9F6] disabled:opacity-40 disabled:cursor-not-allowed rounded-lg border border-[#E9E3D8] transition-colors text-[#212121]"
                 >
@@ -317,7 +331,7 @@ export default function VideoUploader() {
                 </span>
 
                 <button
-                  onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                  onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
                   disabled={currentPage === totalPages}
                   className="px-6 py-2.5 bg-[#FFFFFF] hover:bg-[#FAF9F6] disabled:opacity-40 disabled:cursor-not-allowed rounded-lg border border-[#E9E3D8] transition-colors text-[#212121]"
                 >
