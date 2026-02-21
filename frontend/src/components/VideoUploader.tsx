@@ -18,6 +18,12 @@ export default function VideoUploader() {
   const [sceneCount, setSceneCount] = useState(0)
   const [error, setError] = useState<string | null>(null)
 
+  // состояния для WebSocket-прогресса
+  const [taskId, setTaskId] = useState<string | null>(null)
+  const [wsProgress, setWsProgress] = useState(0)
+  const [wsStatus, setWsStatus] = useState("")
+  const [wsMessage, setWsMessage] = useState("")
+
   const scenesPerPage = 12
   const [currentPage, setCurrentPage] = useState(1)
 
@@ -131,21 +137,93 @@ export default function VideoUploader() {
     }
   }
 
+  // ─── Асинхронная обработка с WebSocket-прогрессом ──────────────────────────
   const handleProcess = async () => {
     if (!uploadedFileName) return
+
     setProcessing(true)
     setError(null)
+    setScenes([])
+    setSceneCount(0)
+    setWsProgress(0)
+    setWsStatus("starting")
+    setWsMessage("Запуск анализа...")
 
     try {
       const res = await axios.post(
-        `/api/proxy/process?filename=${encodeURIComponent(uploadedFileName)}`
+        `/api/proxy/process-async?filename=${encodeURIComponent(uploadedFileName)}`
       )
+
       const data = res.data
-      setScenes(data.scenes || [])
-      setSceneCount(data.scene_count || data.scenes?.length || 0)
+      console.log("[PROCESS] Ответ сервера:", data)
+
+      const task_id = data.task_id
+      if (!task_id) {
+        setError("Сервер не вернул task_id")
+        setProcessing(false)
+        return
+      }
+
+      setTaskId(task_id)
+
+      // Если сервер сразу вернул готовый результат из кэша
+      if (data.status === "completed" && data.result) {
+        console.log("[PROCESS] Кэш получен сразу")
+        setScenes(data.result.scenes ?? [])
+        setSceneCount(data.result.scene_count ?? 0)
+        setWsProgress(100)
+        setWsStatus("completed")
+        setWsMessage("Готово (из кэша)")
+        setProcessing(false)
+        return // ← НЕ открываем WebSocket
+      }
+
+      // Иначе — запускаем WebSocket для отслеживания прогресса
+      const wsUrl = `ws://localhost:8000/ws/progress/${task_id}`
+      console.log("[WS] Пытаемся подключиться →", wsUrl)
+
+      const ws = new WebSocket(wsUrl)
+
+      ws.onopen = () => {
+        console.log("[WS] Соединение установлено!")
+      }
+
+      ws.onmessage = (event) => {
+        try {
+          const msg = JSON.parse(event.data)
+          console.log("[WS] Получено сообщение:", msg)
+
+          setWsProgress(msg.progress ?? 0)
+          setWsStatus(msg.status ?? "")
+          setWsMessage(msg.message ?? "")
+
+          if (msg.status === "completed" && msg.result) {
+            setScenes(msg.result.scenes ?? [])
+            setSceneCount(msg.result.scene_count ?? 0)
+            ws.close()
+          }
+
+          if (msg.status === "error") {
+            setError(msg.error ?? "Ошибка на сервере")
+            ws.close()
+          }
+        } catch (e) {
+          console.error("[WS] Ошибка парсинга:", e)
+        }
+      }
+
+      ws.onerror = (err) => {
+        console.error("[WS] Ошибка соединения:", err)
+        setError("Не удалось подключиться к прогрессу (проверь порт бэкенда)")
+        setProcessing(false)
+      }
+
+      ws.onclose = () => {
+        console.log("[WS] Соединение закрыто")
+        setProcessing(false)
+      }
     } catch (err: any) {
-      setError(err.message || "Ошибка анализа видео")
-    } finally {
+      setError(err.message || "Не удалось запустить обработку")
       setProcessing(false)
     }
   }
@@ -153,9 +231,7 @@ export default function VideoUploader() {
   const handleDelete = async () => {
     if (!uploadedFileName) return
     try {
-      await axios.delete(
-        `/api/proxy/delete?filename=${encodeURIComponent(uploadedFileName)}`
-      )
+      await axios.delete(`/api/proxy/delete?filename=${encodeURIComponent(uploadedFileName)}`)
       setUploadedFiles((prev) => prev.filter((f) => f !== uploadedFileName))
       setUploadedFileName(null)
       setSelectedFileName(null)
@@ -301,18 +377,18 @@ export default function VideoUploader() {
           )}
         </div>
 
-        {/* Управление выбранным файлом */}
+        {/* Управление выбранным файлом + прогресс анализа */}
         {uploadedFileName && (
           <div className="bg-[var(--surface)] border border-[var(--border-light)] rounded-2xl p-6 md:p-8 shadow-[var(--shadow)]">
             <p className="text-lg mb-5">
               Выбран: <span className="text-[var(--accent)] font-medium">{uploadedFileName}</span>
             </p>
 
-            <div className="flex flex-wrap gap-4">
+            <div className="flex flex-wrap gap-4 items-center">
               <button
                 onClick={handleProcess}
                 disabled={processing}
-                className={`px-8 py-3.5 rounded-xl font-medium transition-all duration-300 shadow-md ${
+                className={`px-8 py-3.5 rounded-xl font-medium transition-all duration-300 shadow-md min-w-[180px] ${
                   processing
                     ? "bg-[var(--surface-light)] text-[var(--text-secondary)] cursor-not-allowed"
                     : "bg-[var(--accent)] hover:bg-[var(--accent-hover)] active:bg-[var(--accent-active)] text-white shadow-[0_4px_14px_rgba(217,119,87,0.3)]"
@@ -320,6 +396,23 @@ export default function VideoUploader() {
               >
                 {processing ? "Анализирую..." : "Найти сцены"}
               </button>
+
+              {processing && (
+                <div className="flex-1 min-w-[240px]">
+                  <div className="w-full bg-[var(--surface-light)] rounded-full h-2.5 overflow-hidden">
+                    <div
+                      className="bg-[var(--accent)] h-2.5 rounded-full transition-all duration-300 ease-out"
+                      style={{ width: `${wsProgress}%` }}
+                    />
+                  </div>
+                  <div className="mt-3 flex justify-between text-sm">
+                    <span className="text-[var(--text-secondary)]">
+                      {wsMessage || wsStatus || "Обработка..."}
+                    </span>
+                    <span className="font-medium">{wsProgress}%</span>
+                  </div>
+                </div>
+              )}
 
               <button
                 onClick={handleDelete}
